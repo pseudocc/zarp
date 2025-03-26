@@ -1,0 +1,7 @@
+.zig-cache
+zig-out
+
+lib/*
+include/*
+!lib/.gitkeep
+!include/.gitkeep

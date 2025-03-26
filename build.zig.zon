@@ -1,0 +1,20 @@
+.{
+    .name = .larp,
+    .version = "0.1.0-dev",
+    .fingerprint = 0x54ad5cf872c04c64,
+    .dependencies = .{
+        .zargs = .{
+            .url = "git+https://github.com/pseudocc/zargs.git#c07f9abe56bde798cbaf3159f2c543679c937b19",
+            .hash = "zargs-0.2.0-AAAAANL3AAD9R3ebBwWOYB7JGR9c1BKeosZ2iKQmScXo",
+        },
+    },
+    .paths = .{
+        "larp.zig",
+        "netlink.zig",
+        "ARP.zig",
+        "ssh.zig",
+        "build.zig",
+        "build.zig.zon",
+        "LICENSE",
+    },
+}
