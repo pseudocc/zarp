@@ -1,7 +1,5 @@
 .zig-cache
 zig-out
 
-lib/*
-include/*
-!lib/.gitkeep
-!include/.gitkeep
+translate-c/*
+!translate-c/.gitkeep

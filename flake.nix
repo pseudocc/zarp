@@ -40,30 +40,54 @@
         libc = pkgs.glibc;
         libssh = pkgs.libssh;
 
-        drv.larp = optimize: pkgs.stdenv.mkDerivation {
+        env = {
+          LINUX_INCLUDE_DIR = "${linux}/include";
+          LIBC_INCLUDE_DIR = "${libc.dev}/include";
+          LIBSSH_INCLUDE_DIR = "${libssh.dev}/include";
+          LIBSSH_DIR = "${libssh}/lib";
+        };
+
+        deps = [
+          linux
+          libc.dev
+          libssh
+          libssh.dev
+        ];
+
+        configure = ''
+            ln -s ${libssh.dev}/include/libssh translate-c/libssh
+            ln -s ${linux}/include/linux translate-c/linux
+        '';
+
+        drv.larp = optimize: pkgs.stdenv.mkDerivation ({
           inherit version;
           pname = "larp";
 
           buildInputs = [
-            zig.hook
-            linux
-            libc.dev
-            libssh
-            libssh.dev
-          ];
+            (zig.hook.overrideAttrs {
+              zig_default_flags = [
+                "-Dcpu=baseline"
+                "--release=${optimize}"
+                "--color off"
+              ];
+            })
+          ] ++ deps;
           src = ./.;
 
-          zigBuildFlags = [ "-Doptimize=${optimize}" ];
+          LIBSSH_DIR = "${libssh}/lib";
+          LIBC_INCLUDE_DIR = "${libc.dev}/include";
+          LINUX_INCLUDE_DIR = "${linux}/include";
+          LIBSSH_INCLUDE_DIR = "${libssh.dev}/include";
+
           outputs = [ "out" "doc" ];
 
-          configurePhase = ''
-            ln -s ${linux}/include include/linux
-            ln -s ${libc.dev}/include include/libc
-            ln -s ${libssh.dev}/include include/libssh
-            ln -s ${libssh}/lib lib/libssh
-          '';
+          configurePhase = configure;
 
           patchPhase = ''
+            echo $LIBSSH_DIR
+            echo $LIBC_INCLUDE_DIR
+            echo $LINUX_INCLUDE_DIR
+            echo $LIBSSH_INCLUDE_DIR
             zig fetch --save=zargs ${zargs.outPath}
           '';
 
@@ -78,36 +102,26 @@
             license = lib.licenses.free;
             mainProgram = "larp";
           };
-        };
+        } // env);
 
         packages = rec {
-          larp-debug = drv.larp "Debug";
-          larp-release-fast = drv.larp "ReleaseFast";
-          larp-release-safe = drv.larp "ReleaseSafe";
+          larp-debug = drv.larp "off";
+          larp-release-fast = drv.larp "fast";
+          larp-release-safe = drv.larp "safe";
+          larp-release-small = drv.larp "small";
           larp = larp-release-fast;
         };
       in {
-        devShells.default = pkgs.mkShell {
-          LIBSSH_DIR = "${libssh}/lib";
-          buildInputs = [
-            zig
-            zls
-            linux
-            libc.dev
-            libssh
-            libssh.dev
-          ];
+        devShells.default = pkgs.mkShell ({
+          buildInputs = deps ++ [ zig zls ];
           shellHook = ''
-            rm -f include/{linux,libc,libssh} lib/libssh
-            ln -s ${linux}/include include/linux
-            ln -s ${libc.dev}/include include/libc
-            ln -s ${libssh.dev}/include include/libssh
-            ln -s ${libssh}/lib lib/libssh
+            rm -f translate-c/{libssh,linux}
+            ${configure}
           '';
-        };
+        } // env);
 
         packages = packages // {
-          default = packages.larp;
+          default = packages.larp-debug;
         };
 
         apps = let
