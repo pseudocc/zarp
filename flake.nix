@@ -84,10 +84,6 @@
           configurePhase = configure;
 
           patchPhase = ''
-            echo $LIBSSH_DIR
-            echo $LIBC_INCLUDE_DIR
-            echo $LINUX_INCLUDE_DIR
-            echo $LIBSSH_INCLUDE_DIR
             zig fetch --save=zargs ${zargs.outPath}
           '';
 
@@ -113,7 +109,11 @@
         };
       in {
         devShells.default = pkgs.mkShell ({
-          buildInputs = deps ++ [ zig zls ];
+          buildInputs = deps ++ [
+            zig
+            zls
+            pkgs.autoPatchelfHook
+          ];
           shellHook = ''
             rm -f translate-c/{libssh,linux}
             ${configure}
@@ -121,7 +121,7 @@
         } // env);
 
         packages = packages // {
-          default = packages.larp-debug;
+          default = packages.larp;
         };
 
         apps = let
@@ -144,7 +144,7 @@
             (lib.mapAttrsToList ctor.larpy packages)
           );
         in entries // {
-          default = entries.larpy;
+          default = entries.larp;
         };
       }
     );

@@ -43,6 +43,7 @@ const TranslateC = struct {
 };
 
 pub fn build(b: *Build) !void {
+    const libssh = try libpath("LIBSSH_DIR");
     const target = b.standardTargetOptions(.{
         .default_target = .{
             .abi = .gnu,
@@ -62,14 +63,9 @@ pub fn build(b: *Build) !void {
     larp.root_module.addImport("linux_if_arp", c.linux_if_arp.createModule());
     larp.root_module.addImport("libssh", c.libssh.createModule());
     larp.root_module.addImport("zargs", zargs.module("zargs"));
-    larp.addLibraryPath(try libpath("LIBSSH_DIR"));
+    larp.addLibraryPath(libssh);
     larp.linkSystemLibrary("ssh");
     b.installArtifact(larp);
-
-    const run_larp = b.addRunArtifact(larp);
-    run_larp.step.dependOn(b.getInstallStep());
-    const run_larp_step = b.step("larp", "Run larp");
-    run_larp_step.dependOn(&run_larp.step);
 
     // const larpy = b.addExecutable(.{
     //     .name = "larpy",
@@ -79,9 +75,4 @@ pub fn build(b: *Build) !void {
     // });
     // larpy.root_module.addImport("zargs", zargs.module("zargs"));
     // b.installArtifact(larpy);
-    //
-    // const run_larpy = b.addRunArtifact(larpy);
-    // run_larpy.step.dependOn(b.getInstallStep());
-    // const run_larpy_step = b.step("larpy", "Run larpy");
-    // run_larpy_step.dependOn(&run_larpy.step);
 }
