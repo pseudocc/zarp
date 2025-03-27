@@ -148,17 +148,17 @@ pub fn send(arp: ARP, to: Ip4) !void {
     switch (errno(rc)) {
         .SUCCESS => {
             if (rc != @sizeOf(Packet)) {
-                log.err("send({}): os.sendto() -> short write", .{to});
+                log.err("send({}): os.sendto() -> short write", .{stringify(to)});
                 return error.ShortWrite;
             }
-            log.debug("send: {} -> SUCCESS", .{to});
+            log.debug("send: {} -> SUCCESS", .{stringify(to)});
         },
         .AGAIN => {
-            log.warn("send({}): os.sendto() -> EAGAIN", .{to});
+            log.warn("send({}): os.sendto() -> EAGAIN", .{stringify(to)});
             return error.Retry;
         },
         else => |case| {
-            log.err("send({}): os.sendto() -> {s}", .{ to, @tagName(case) });
+            log.err("send({}): os.sendto() -> {s}", .{ stringify(to), @tagName(case) });
             return error.Sendto;
         },
     }

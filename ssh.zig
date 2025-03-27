@@ -3,18 +3,33 @@ const libssh = @import("libssh");
 
 const log = std.log.scoped(.libssh);
 
+pub const Key = struct {
+    underlying: libssh.ssh_key,
+
+    pub fn init(path: [:0]const u8, passphrase: [:0]const u8) !Key {
+        var key: libssh.ssh_key = null;
+        const rc = libssh.ssh_pki_import_privkey_file(@ptrCast(path), passphrase, null, null, &key);
+        return switch (rc) {
+            libssh.SSH_OK => .{ .underlying = key },
+            else => error.SSHPrivateKey,
+        };
+    }
+
+    pub fn deinit(self: Key) void {
+        libssh.ssh_key_free(self.underlying);
+    }
+};
+
 pub const Session = struct {
     underlying: libssh.ssh_session,
 
     pub fn init(
         host: [:0]const u8,
         user: [:0]const u8,
-        password: [:0]const u8,
+        private_key: Key,
     ) !Session {
-        log.debug("init", .{});
         const session = libssh.ssh_new() orelse return error.SSHSessionInit;
         errdefer libssh.ssh_free(session);
-        log.debug("session: {p}", .{session});
 
         _ = libssh.ssh_options_set(
             session,
@@ -26,6 +41,11 @@ pub const Session = struct {
             libssh.SSH_OPTIONS_USER,
             @ptrCast(user),
         );
+        _ = libssh.ssh_options_set(
+            session,
+            libssh.SSH_OPTIONS_TIMEOUT_USEC,
+            &@as(u32, std.time.us_per_s),
+        );
 
         switch (libssh.ssh_connect(session)) {
             libssh.SSH_OK => {},
@@ -33,7 +53,7 @@ pub const Session = struct {
         }
         errdefer libssh.ssh_disconnect(session);
 
-        switch (libssh.ssh_userauth_password(session, null, password)) {
+        switch (libssh.ssh_userauth_publickey(session, null, private_key.underlying)) {
             libssh.SSH_AUTH_SUCCESS => {},
             else => return error.SSHAuth,
         }
