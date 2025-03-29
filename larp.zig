@@ -1,6 +1,8 @@
 const std = @import("std");
+const Z = @import("zargs");
 const ARP = @import("ARP.zig");
 const netlink = @import("netlink.zig");
+const socket = @import("socket.zig");
 const os = std.os.linux;
 const ssh = @import("ssh.zig");
 
@@ -8,8 +10,17 @@ const log = std.log;
 const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 
-fn find(name: [:0]const u8) !ARP.Device {
+pub const std_options = std.Options{
+    .log_scope_levels = &.{
+        .{ .scope = .zargs, .level = .info },
+        .{ .scope = .arp, .level = .info },
+        .{ .scope = .netlink, .level = .info },
+    },
+};
+
+fn findNetdev(maybe_name: ?[:0]const u8) !ARP.Device {
     var buffer: [4096]u8 align(4) = undefined;
+    var interface: []const u8 = maybe_name orelse "";
     var result: ARP.Device = undefined;
     const request = netlink.Request.init(&buffer);
 
@@ -34,16 +45,20 @@ fn find(name: [:0]const u8) !ARP.Device {
                     .IFNAME => {
                         const iff: ARP.IFF = @bitCast(infomsg.flags);
                         const is_up = iff.up and iff.running and iff.lowerup;
-                        const ifname = attr.asSlice(u8, 0);
-                        if (name.len == 0 and !iff.loopback and is_up) {
-                            log.info("auto detected interface: {s}", .{ifname});
+                        const this_interface = attr.asSlice(u8, 0);
+
+                        if (interface.len == 0 and !iff.loopback and is_up) {
+                            log.info("auto detected interface: {s}", .{this_interface});
+                            interface = this_interface;
                             found = true;
                             continue;
                         }
-                        found = std.mem.eql(u8, name, ifname);
+
+                        found = std.mem.eql(u8, interface, this_interface);
                         if (!found)
                             continue;
-                        log.debug("interface: {s} flags: {}", .{ name, iff });
+
+                        log.debug("interface: {s} flags: {}", .{ interface, iff });
                         if (!is_up)
                             return error.InterfaceDown;
                     },
@@ -55,7 +70,7 @@ fn find(name: [:0]const u8) !ARP.Device {
                 continue;
 
             if (address == null or broadcast == null) {
-                log.err("interface: {s} missing address or broadcast", .{name});
+                log.err("interface: {s} missing address or broadcast", .{interface});
                 return error.MissingHardwareAddress;
             }
 
@@ -90,7 +105,7 @@ fn find(name: [:0]const u8) !ARP.Device {
                         else => {},
                     }
                 }
-                log.err("interface: {s} missing ip4", .{name});
+                log.err("interface: {s} missing ip4", .{interface});
                 return error.MissingIp4Address;
             };
             result.index = addrmsg.index;
@@ -174,10 +189,9 @@ const Device = struct {
     }
 };
 
-pub fn main() !void {
+pub fn listen(args: Daemon) !void {
     const allocator = std.heap.page_allocator;
-    const netdev = try find(&.{});
-    const private_key_path = std.mem.sliceTo(std.os.argv[1], 0);
+    const netdev = try findNetdev(args.interface);
 
     const host_bits: u5 = @intCast(32 - netdev.prefix_len);
     const network = std.mem.bigToNative(ARP.Ip4, netdev.ip) & (~@as(ARP.Ip4, 0) << host_bits);
@@ -200,17 +214,64 @@ pub fn main() !void {
     };
     defer allocator.free(devices);
 
-    const key = try ssh.Key.init(private_key_path, "foss");
+    const key = try ssh.Key.init(args.key.path, args.key.passphrase);
     defer key.deinit();
 
     const arp = try ARP.init(netdev);
     defer arp.deinit();
 
+    const zarpd = try socket.Daemon.init();
+    defer zarpd.deinit();
+
+    var last_scan: i64 = 0;
     while (true) {
+        if (zarpd.accept() catch null) |response| switch (response.request) {
+            .list => {
+                const n_labdevs = z: {
+                    var n: usize = 0;
+                    for (devices) |dev| {
+                        if (dev.info) |info| {
+                            if (info.lab_device)
+                                n += 1;
+                        }
+                    }
+                    break :z n;
+                };
+
+                const labdevs = try allocator.alloc(socket.Device, n_labdevs);
+                defer allocator.free(labdevs);
+
+                var i: usize = 0;
+                for (devices) |dev| {
+                    if (dev.info) |info| {
+                        if (info.lab_device) {
+                            labdevs[i] = .{
+                                .ip = dev.ip,
+                                .mac = info.mac,
+                                .name = info.name,
+                            };
+                            i += 1;
+                        }
+                    }
+                }
+
+                response.list(labdevs) catch |err| {
+                    log.err("list devices: {}", .{err});
+                };
+            },
+            .block, .unblock => {},
+        };
+
+        const now = std.time.timestamp();
+        if (now - last_scan < args.interval)
+            continue;
+
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = allocator });
-        defer pool.deinit();
-        defer std.Thread.sleep(std.time.ns_per_s * 5);
+        defer {
+            pool.deinit();
+            last_scan = now;
+        }
 
         for (devices) |dev| {
             if (!dev.refresh())
@@ -251,16 +312,128 @@ pub fn main() !void {
                 key,
             }) catch continue;
         }
+    }
+}
 
-        var n_lab_devices: usize = 0;
-        for (devices) |dev| {
-            if (dev.info) |info| {
-                if (info.lab_device) {
-                    n_lab_devices += 1;
-                    log.debug("{} {s}", .{ ARP.stringify(dev.ip), info.name });
+const Commands = union(enum) {
+    daemon: Daemon,
+    list: void,
+
+    pub fn summary(active: std.meta.Tag(@This())) Z.string {
+        return switch (active) {
+            .daemon => Daemon.zargs.summary,
+            .list => "List all lab devices",
+        };
+    }
+};
+
+const Daemon = struct {
+    const PrivateKey = struct {
+        const Error = Z.ParseError;
+        path: Z.string,
+        passphrase: ?Z.string,
+
+        pub fn parse(input: []const u8, allocator: std.mem.Allocator) Error!PrivateKey {
+            if (std.mem.indexOfScalar(u8, input, ':')) |i| {
+                const path = try allocator.dupeZ(u8, input[0..i]);
+                const passphrase = try allocator.dupeZ(u8, input[i + 1 ..]);
+                return .{ .path = path, .passphrase = passphrase };
+            }
+            const path = try allocator.dupeZ(u8, input);
+            return .{ .path = path, .passphrase = null };
+        }
+
+        pub const help_type = "string[:string]";
+    };
+
+    interface: ?Z.string = null,
+    user: ?Z.string,
+    key: PrivateKey,
+    interval: u32 = 5,
+
+    const arg_interface = Z.Final.Declaration{
+        .path = &.{"interface"},
+        .parameter = .{ .named = .{
+            .long = "interface",
+            .short = 'i',
+            .metavar = "IFNAME",
+        } },
+        .description =
+        \\Network interface to monitor, will pick the first
+        \\available interface if not specified.
+        ,
+    };
+
+    const arg_key = Z.Final.Declaration{
+        .path = &.{"key"},
+        .parameter = .{ .named = .{
+            .long = "key",
+            .short = 'k',
+            .metavar = "FILE[:PASSPHRASE]",
+        } },
+        .description =
+        \\Private key file for ssh authentication,
+        \\append passphrase after colon if applicable.
+        ,
+    };
+
+    const arg_user = Z.Final.Declaration{
+        .path = &.{"user"},
+        .parameter = .{ .named = .{
+            .long = "user",
+            .short = 'u',
+            .metavar = "USER",
+        } },
+        .description =
+        \\User that logs into lab devices, will use the
+        \\current user if not specified.
+        ,
+    };
+
+    const arg_interval = Z.Final.Declaration{
+        .path = &.{"interval"},
+        .parameter = .{ .named = .{
+            .long = "interval",
+            .short = 't',
+            .metavar = "SECONDS",
+        } },
+        .description =
+        \\Scan interval in seconds, default is 5 seconds.
+        ,
+    };
+
+    pub const zargs = Z.Final{
+        .args = &.{
+            arg_key,
+            arg_interface,
+            arg_user,
+            arg_interval,
+        },
+        .summary = "ARP daemon for lab device discovery",
+    };
+};
+
+const Query = void;
+
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+    var parser = Z.init(allocator, std.os.argv);
+    defer parser.deinit();
+
+    const args = parser.parse(Commands);
+    if (args == Z.ParseError.HelpRequested)
+        return;
+
+    switch (try args) {
+        .daemon => |daemon| try listen(daemon),
+        .list => {
+            const client = try socket.Client.init();
+            if (try client.list(allocator)) |devices| {
+                defer allocator.free(devices);
+                for (devices) |device| {
+                    log.info("{s}", .{device.name});
                 }
             }
-        }
-        log.debug("online lab devices: {}", .{n_lab_devices});
+        },
     }
 }

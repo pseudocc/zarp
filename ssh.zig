@@ -6,9 +6,15 @@ const log = std.log.scoped(.libssh);
 pub const Key = struct {
     underlying: libssh.ssh_key,
 
-    pub fn init(path: [:0]const u8, passphrase: [:0]const u8) !Key {
+    pub fn init(path: [:0]const u8, passphrase: ?[:0]const u8) !Key {
         var key: libssh.ssh_key = null;
-        const rc = libssh.ssh_pki_import_privkey_file(@ptrCast(path), passphrase, null, null, &key);
+        const rc = libssh.ssh_pki_import_privkey_file(
+            @ptrCast(path),
+            @ptrCast(passphrase),
+            null,
+            null,
+            &key,
+        );
         return switch (rc) {
             libssh.SSH_OK => .{ .underlying = key },
             else => error.SSHPrivateKey,

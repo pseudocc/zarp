@@ -66,13 +66,4 @@ pub fn build(b: *Build) !void {
     larp.addLibraryPath(libssh);
     larp.linkSystemLibrary("ssh");
     b.installArtifact(larp);
-
-    // const larpy = b.addExecutable(.{
-    //     .name = "larpy",
-    //     .root_source_file = b.path("larpy.zig"),
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-    // larpy.root_module.addImport("zargs", zargs.module("zargs"));
-    // b.installArtifact(larpy);
 }

@@ -5,7 +5,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     zargs = {
-      url = "github:pseudocc/zargs?rev=c07f9abe56bde798cbaf3159f2c543679c937b19";
+      url = "github:pseudocc/zargs?rev=2b27bfe487d80ec326ffa3bab4b7dd5ccb6a4e58";
       flake = false;
     };
   };
@@ -132,17 +132,7 @@
               program = lib.getExe' pkg "larp";
             };
           };
-          ctor.larpy = name: pkg: {
-            name = builtins.replaceStrings ["larp"] ["larpy"] name;
-            value = {
-              type = "app";
-              program = lib.getExe' pkg "larpy";
-            };
-          };
-          entries = builtins.listToAttrs (
-            (lib.mapAttrsToList ctor.larp packages) ++
-            (lib.mapAttrsToList ctor.larpy packages)
-          );
+          entries = builtins.listToAttrs (lib.mapAttrsToList ctor.larp packages);
         in entries // {
           default = entries.larp;
         };

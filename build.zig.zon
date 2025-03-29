@@ -4,8 +4,8 @@
     .fingerprint = 0x54ad5cf872c04c64,
     .dependencies = .{
         .zargs = .{
-            .url = "git+https://github.com/pseudocc/zargs.git#c07f9abe56bde798cbaf3159f2c543679c937b19",
-            .hash = "zargs-0.2.0-AAAAANL3AAD9R3ebBwWOYB7JGR9c1BKeosZ2iKQmScXo",
+            .url = "git+https://github.com/pseudocc/zargs.git#2b27bfe487d80ec326ffa3bab4b7dd5ccb6a4e58",
+            .hash = "zargs-0.2.1-ORyjbbH6AAAnG-lGi4w9kUNsuXPvGONk7Zr6wjXSG76_",
         },
     },
     .paths = .{

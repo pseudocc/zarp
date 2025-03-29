@@ -185,7 +185,7 @@ pub fn receive(arp: ARP) !Packet {
         return error.NotArp;
     }
     if (packet.arp.ar_op != std.mem.nativeToBig(u16, if_arp.ARPOP_REPLY)) {
-        log.warn("receive: ar_op: {}", .{std.mem.bigToNative(u16, packet.arp.ar_op)});
+        log.debug("receive: ar_op: {}", .{std.mem.bigToNative(u16, packet.arp.ar_op)});
         return error.NotReply;
     }
 

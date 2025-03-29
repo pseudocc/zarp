@@ -25,17 +25,17 @@
     "zargs": {
       "flake": false,
       "locked": {
-        "lastModified": 1737514827,
-        "narHash": "sha256-Uo7G61KeXhRBboPWK+VfYt1waerYwz9OTCtESR7NXB0=",
+        "lastModified": 1743069551,
+        "narHash": "sha256-gxYal+ireSUyHCbHvj9NiibXHS/CcXrO2ZUd2o0DUvg=",
         "owner": "pseudocc",
         "repo": "zargs",
-        "rev": "c07f9abe56bde798cbaf3159f2c543679c937b19",
+        "rev": "0383cb3cfc40f1b84c68b6445d91c2e8a66f2db2",
         "type": "github"
       },
       "original": {
         "owner": "pseudocc",
         "repo": "zargs",
-        "rev": "c07f9abe56bde798cbaf3159f2c543679c937b19",
+        "rev": "0383cb3cfc40f1b84c68b6445d91c2e8a66f2db2",
         "type": "github"
       }
     }
