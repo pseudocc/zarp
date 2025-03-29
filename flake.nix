@@ -59,9 +59,9 @@
             ln -s ${linux}/include/linux translate-c/linux
         '';
 
-        drv.larp = optimize: pkgs.stdenv.mkDerivation ({
+        drv.zarp = optimize: pkgs.stdenv.mkDerivation ({
           inherit version;
-          pname = "larp";
+          pname = "zarp";
 
           buildInputs = [
             (zig.hook.overrideAttrs {
@@ -96,16 +96,16 @@
           meta = {
             description = "Lab ARP scanner";
             license = lib.licenses.free;
-            mainProgram = "larp";
+            mainProgram = "zarp";
           };
         } // env);
 
         packages = rec {
-          larp-debug = drv.larp "off";
-          larp-release-fast = drv.larp "fast";
-          larp-release-safe = drv.larp "safe";
-          larp-release-small = drv.larp "small";
-          larp = larp-release-fast;
+          zarp-debug = drv.zarp "off";
+          zarp-release-fast = drv.zarp "fast";
+          zarp-release-safe = drv.zarp "safe";
+          zarp-release-small = drv.zarp "small";
+          zarp = zarp-release-fast;
         };
       in {
         devShells.default = pkgs.mkShell ({
@@ -121,20 +121,20 @@
         } // env);
 
         packages = packages // {
-          default = packages.larp;
+          default = packages.zarp;
         };
 
         apps = let
-          ctor.larp = name: pkg: {
+          ctor.zarp = name: pkg: {
             inherit name;
             value = {
               type = "app";
-              program = lib.getExe' pkg "larp";
+              program = lib.getExe' pkg "zarp";
             };
           };
-          entries = builtins.listToAttrs (lib.mapAttrsToList ctor.larp packages);
+          entries = builtins.listToAttrs (lib.mapAttrsToList ctor.zarp packages);
         in entries // {
-          default = entries.larp;
+          default = entries.zarp;
         };
       }
     );

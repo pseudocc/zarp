@@ -54,16 +54,16 @@ pub fn build(b: *Build) !void {
     const c = try TranslateC.init(b, target, optimize);
     const zargs = b.dependency("zargs", .{});
 
-    const larp = b.addExecutable(.{
-        .name = "larp",
-        .root_source_file = b.path("larp.zig"),
+    const zarp = b.addExecutable(.{
+        .name = "zarp",
+        .root_source_file = b.path("zarp.zig"),
         .target = target,
         .optimize = optimize,
     });
-    larp.root_module.addImport("linux_if_arp", c.linux_if_arp.createModule());
-    larp.root_module.addImport("libssh", c.libssh.createModule());
-    larp.root_module.addImport("zargs", zargs.module("zargs"));
-    larp.addLibraryPath(libssh);
-    larp.linkSystemLibrary("ssh");
-    b.installArtifact(larp);
+    zarp.root_module.addImport("linux_if_arp", c.linux_if_arp.createModule());
+    zarp.root_module.addImport("libssh", c.libssh.createModule());
+    zarp.root_module.addImport("zargs", zargs.module("zargs"));
+    zarp.addLibraryPath(libssh);
+    zarp.linkSystemLibrary("ssh");
+    b.installArtifact(zarp);
 }
