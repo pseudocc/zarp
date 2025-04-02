@@ -373,6 +373,7 @@ pub const Device = struct {
         defer session.deinit();
 
         const channel = try session.channel();
+        defer channel.deinit();
         try channel.exec("hostname");
 
         var stream = std.io.fixedBufferStream(&buffer);

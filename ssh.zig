@@ -93,7 +93,7 @@ const Channel = struct {
     }
 
     pub fn deinit(self: Channel) void {
-        libssh.ssh_channel_close(self.underlying);
+        _ = libssh.ssh_channel_close(self.underlying);
         libssh.ssh_channel_free(self.underlying);
     }
 
