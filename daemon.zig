@@ -357,8 +357,9 @@ pub const Device = struct {
 
     fn update(dev: *Device, mac: ARP.Mac, user: [:0]const u8, key: ssh.Key) !void {
         var buffer: [1024]u8 = undefined;
-        const host = std.fmt.bufPrintZ(&buffer, "{}", .{ARP.stringify(dev.ip)}) catch unreachable;
+        var stream = std.io.fixedBufferStream(&buffer);
 
+        const host = std.fmt.bufPrintZ(&buffer, "{}", .{ARP.stringify(dev.ip)}) catch unreachable;
         const now = std.time.timestamp();
         const session = ssh.Session.init(host, user, key) catch {
             dev.info = .{
@@ -372,14 +373,9 @@ pub const Device = struct {
         };
         defer session.deinit();
 
-        const channel = try session.channel();
-        defer channel.deinit();
-        try channel.exec("hostname");
-
-        var stream = std.io.fixedBufferStream(&buffer);
-        try channel.read(stream.writer(), .stdout);
-
+        _ = try session.spawn("hostname", stream.writer());
         const hostname = std.mem.trimRight(u8, stream.getWritten(), "\n");
+
         if (dev.info) |info| {
             if (!info.lab_device)
                 dev.allocator.free(info.name);

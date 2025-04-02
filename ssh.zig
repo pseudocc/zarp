@@ -75,6 +75,14 @@ pub const Session = struct {
     pub fn channel(self: Session) !Channel {
         return Channel.init(self);
     }
+
+    pub fn spawn(self: Session, command: [:0]const u8, writer: anytype) !c_int {
+        const ch = try self.channel();
+        defer ch.deinit();
+        const rc = try ch.exec(command);
+        try ch.read(writer, .stdout);
+        return rc;
+    }
 };
 
 const Channel = struct {
@@ -97,11 +105,12 @@ const Channel = struct {
         libssh.ssh_channel_free(self.underlying);
     }
 
-    pub fn exec(self: Channel, command: [:0]const u8) !void {
+    pub fn exec(self: Channel, command: [:0]const u8) !c_int {
         switch (libssh.ssh_channel_request_exec(self.underlying, command)) {
             libssh.SSH_OK => {},
             else => return error.SSHChannelExec,
         }
+        return libssh.ssh_channel_get_exit_status(self.underlying);
     }
 
     const Output = enum {
