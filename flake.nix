@@ -60,7 +60,7 @@
         '';
 
         drv.zarp = optimize: pkgs.stdenv.mkDerivation ({
-          inherit version;
+          version = "${version}-lab";
           pname = "zarp";
 
           buildInputs = [
