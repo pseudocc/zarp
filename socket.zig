@@ -6,6 +6,8 @@ const os = std.os.linux;
 const posix = std.posix;
 const native_endian = builtin.cpu.arch.endian();
 
+const log = std.log.scoped(.@"unix-socket");
+
 const Request = enum(u8) {
     list,
     rescan,
@@ -60,38 +62,77 @@ pub const Device = struct {
     }
 };
 
-fn socketPath(buffer: []u8) ![]const u8 {
-    return try std.fmt.bufPrint(buffer, "/run/user/{}/zarp.sock", .{os.geteuid()});
-}
+const Socket = struct {
+    const Name = "zarp.sock";
+    fd: os.fd_t,
+
+    fn init(comptime create: bool) !Socket {
+        const cwd = std.fs.cwd();
+        var sa = posix.sockaddr.un{
+            .family = os.AF.UNIX,
+            .path = undefined,
+        };
+        const rt_path = try std.fmt.bufPrintZ(&sa.path, "/run/user/{}", .{os.geteuid()});
+        _ = try std.fmt.bufPrintZ(sa.path[rt_path.len..], "/{s}", .{Name});
+
+        if (create) {
+            const dir = cwd.openDir(rt_path, .{}) catch |err| switch (err) {
+                error.FileNotFound => mkdir: {
+                    log.info("creating UNIX socket directory {s}", .{rt_path});
+                    try cwd.makeDirZ(rt_path);
+                    break :mkdir try cwd.openDir(rt_path, .{});
+                },
+                else => |e| return e,
+            };
+            dir.deleteFile(Name) catch |err| {
+                if (err != error.FileNotFound) return err;
+            };
+        } else {
+            // ensure the socket file is present
+            const dir = try cwd.openDir(rt_path, .{});
+            _ = try dir.statFile(Name);
+        }
+
+        const addr = std.net.Address{ .un = sa };
+        const fd = try posix.socket(os.AF.UNIX, os.SOCK.STREAM, os.PF.UNIX);
+        errdefer posix.close(fd);
+
+        const socket_path = std.mem.sliceTo(&sa.path, 0);
+        if (create) {
+            log.info("binding & listening on UNIX socket {s}", .{socket_path});
+            try posix.bind(fd, &addr.any, addr.getOsSockLen());
+            try posix.listen(fd, os.SOMAXCONN);
+        } else {
+            log.debug("connecting to UNIX socket {s}", .{socket_path});
+            try posix.connect(fd, &addr.any, addr.getOsSockLen());
+        }
+
+        return .{ .fd = fd };
+    }
+
+    fn deinit(self: Socket) void {
+        posix.close(self.fd);
+    }
+};
 
 pub const Daemon = struct {
-    socket: os.fd_t,
+    socket: Socket,
 
     pub fn init() !Daemon {
-        var path_buffer: [32]u8 = undefined;
-        const socket_path = try socketPath(&path_buffer);
-        std.fs.cwd().deleteFile(socket_path) catch |err| {
-            if (err != error.FileNotFound) return err;
+        const socket = Socket.init(true) catch |err| {
+            log.err("inner error: {}", .{err});
+            return error.SocketInit;
         };
-        std.log.debug("socket path: {s}", .{socket_path});
-
-        const sa = try std.net.Address.initUnix(socket_path);
-        const socket = try posix.socket(os.AF.UNIX, os.SOCK.STREAM, os.PF.UNIX);
-        errdefer posix.close(socket);
-
-        try posix.bind(socket, &sa.any, sa.getOsSockLen());
-        try posix.listen(socket, os.SOMAXCONN);
-
         return .{ .socket = socket };
     }
 
     pub fn deinit(self: Daemon) void {
-        posix.close(self.socket);
+        posix.close(self.socket.fd);
     }
 
     pub fn accept(self: Daemon) !?Response {
         var pollfd = os.pollfd{
-            .fd = self.socket,
+            .fd = self.socket.fd,
             .events = os.POLL.IN,
             .revents = 0,
         };
@@ -99,7 +140,9 @@ pub const Daemon = struct {
         if (os.poll(@ptrCast(&pollfd), 1, 100) <= 0)
             return null;
 
-        const client = try posix.accept(self.socket, null, null, os.SOCK.CLOEXEC);
+        const client = try posix.accept(self.socket.fd, null, null, os.SOCK.CLOEXEC);
+        log.debug("accepted client: fd={}", .{client});
+
         const file = std.fs.File{ .handle = client };
         const byte = try file.reader().readByte();
         const request = try std.meta.intToEnum(Request, byte);
@@ -111,30 +154,27 @@ pub const Daemon = struct {
 };
 
 pub const Client = struct {
-    socket: os.fd_t,
+    socket: Socket,
 
     pub fn init() !Client {
-        var path_buffer: [32]u8 = undefined;
-        const socket_path = try socketPath(&path_buffer);
-
-        // ensure the socket file is present
-        _ = try std.fs.cwd().statFile(socket_path);
-
-        const sa = try std.net.Address.initUnix(socket_path);
-        const socket = try posix.socket(os.AF.UNIX, os.SOCK.STREAM, os.PF.UNIX);
-        errdefer posix.close(socket);
-
-        try posix.connect(socket, &sa.any, sa.getOsSockLen());
+        const socket = Socket.init(false) catch |err| {
+            log.err("inner error: {}", .{err});
+            return error.SocketInit;
+        };
         return .{ .socket = socket };
     }
 
+    pub fn deinit(self: Client) void {
+        posix.close(self.socket.fd);
+    }
+
     pub fn list(self: Client, allocator: std.mem.Allocator) !?[]const Device {
-        const file = std.fs.File{ .handle = self.socket };
+        const file = std.fs.File{ .handle = self.socket.fd };
         const writer = file.writer();
         const reader = file.reader();
 
         try writer.writeByte(@intFromEnum(Request.list));
-        std.log.debug("sent list request", .{});
+        log.debug("sent list request", .{});
 
         const n_devices = try reader.readInt(u32, native_endian);
         const devices = try allocator.alloc(Device, n_devices);
@@ -149,12 +189,12 @@ pub const Client = struct {
     }
 
     pub fn rescan(self: Client) !bool {
-        const file = std.fs.File{ .handle = self.socket };
+        const file = std.fs.File{ .handle = self.socket.fd };
         const writer = file.writer();
         const reader = file.reader();
 
         try writer.writeByte(@intFromEnum(Request.rescan));
-        std.log.debug("sent rescan request", .{});
+        log.debug("sent rescan request", .{});
 
         return try reader.readByte() == @intFromBool(true);
     }

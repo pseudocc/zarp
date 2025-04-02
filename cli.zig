@@ -57,6 +57,8 @@ pub const List = struct {
 
     pub fn list(self: List) !void {
         const client = try socket.Client.init();
+        defer client.deinit();
+
         const stdout = std.io.getStdOut().writer();
         const allocator = std.heap.page_allocator;
 
@@ -77,6 +79,8 @@ pub const List = struct {
 
 pub fn rescan() !void {
     const client = try socket.Client.init();
+    defer client.deinit();
+
     if (!try client.rescan())
         return error.RescanFailed;
 }
