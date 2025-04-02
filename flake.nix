@@ -1,5 +1,5 @@
 {
-  description = "GUTT: 🦤";
+  description = "ZARP";
 
   # zig 0.14.0
   inputs = {
