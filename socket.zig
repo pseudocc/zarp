@@ -23,12 +23,7 @@ const Response = struct {
 
         try writer.writeInt(u32, @intCast(devices.len), native_endian);
         for (devices) |device| {
-            try writer.writeInt(ARP.Ip4, device.ip, native_endian);
-            for (device.mac) |byte| {
-                try writer.writeByte(byte);
-            }
-            try writer.writeAll(device.name);
-            try writer.writeByte(0);
+            try device.serialize(writer);
         }
     }
 
@@ -39,9 +34,55 @@ const Response = struct {
 };
 
 pub const Device = struct {
+    const Details = @import("daemon.zig").Device.Info.Details;
     ip: ARP.Ip4,
     mac: ARP.Mac,
     name: []const u8,
+    details: ?Details,
+
+    fn serialize(device: Device, writer: anytype) !void {
+        try writer.writeInt(ARP.Ip4, device.ip, native_endian);
+        for (device.mac) |byte| {
+            try writer.writeByte(byte);
+        }
+        try writer.writeAll(device.name);
+        try writer.writeByte(0);
+        try writer.writeByte(@intFromBool(device.details == null));
+        if (device.details) |details| {
+            inline for (std.meta.fields(Details)) |field| switch (field.type) {
+                bool => try writer.writeByte(@intFromBool(@field(details, field.name))),
+                u32 => try writer.writeInt(u32, @field(details, field.name), native_endian),
+                []const u8 => {
+                    try writer.writeAll(@field(details, field.name));
+                    try writer.writeByte(0);
+                },
+                else => unreachable,
+            };
+        }
+    }
+
+    fn deserialize(reader: anytype, allocator: std.mem.Allocator) !Device {
+        var device: Device = undefined;
+        device.ip = try reader.readInt(ARP.Ip4, native_endian);
+        for (&device.mac) |*byte| {
+            byte.* = try reader.readByte();
+        }
+        device.name = try reader.readUntilDelimiterAlloc(allocator, 0, 256);
+        device.details = z: {
+            const is_null = try reader.readByte() == @intFromBool(true);
+            if (is_null)
+                break :z null;
+            var details = std.mem.zeroes(Details);
+            inline for (std.meta.fields(Details)) |field| switch (field.type) {
+                bool => @field(details, field.name) = try reader.readByte() == @intFromBool(true),
+                u32 => @field(details, field.name) = try reader.readInt(u32, native_endian),
+                []const u8 => @field(details, field.name) = try reader.readUntilDelimiterAlloc(allocator, 0, 256),
+                else => unreachable,
+            };
+            break :z details;
+        };
+        return device;
+    }
 
     pub fn jsonStringify(self: *const Device, writer: anytype) !void {
         // use a wrapper class to make thing easier
@@ -49,6 +90,7 @@ pub const Device = struct {
             ip: []const u8,
             mac: []const u8,
             name: []const u8,
+            details: ?Details,
         };
 
         var ip_buffer: [16]u8 = undefined;
@@ -58,6 +100,7 @@ pub const Device = struct {
             .ip = try std.fmt.bufPrint(&ip_buffer, "{}", .{ARP.stringify(self.ip)}),
             .mac = try std.fmt.bufPrint(&mac_buffer, "{}", .{ARP.stringify(self.mac)}),
             .name = self.name,
+            .details = self.details,
         });
     }
 };
@@ -181,11 +224,7 @@ pub const Client = struct {
         const n_devices = try reader.readInt(u32, native_endian);
         const devices = try allocator.alloc(Device, n_devices);
         for (devices) |*device| {
-            device.ip = try reader.readInt(ARP.Ip4, native_endian);
-            for (&device.mac) |*byte| {
-                byte.* = try reader.readByte();
-            }
-            device.name = try reader.readUntilDelimiterAlloc(allocator, 0, 256);
+            device.* = try Device.deserialize(reader, allocator);
         }
         return devices;
     }

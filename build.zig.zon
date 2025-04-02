@@ -14,6 +14,7 @@
         "ARP.zig",
         "ssh.zig",
         "socket.zig",
+        "collect.sh",
         "cli.zig",
         "daemon.zig",
         "build.zig",
