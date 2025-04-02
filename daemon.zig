@@ -261,6 +261,7 @@ pub const Daemon = struct {
                                     .mac = info.mac,
                                     .name = info.name,
                                     .online = info.last_seen > online_bound,
+                                    .details = info.details,
                                 };
                                 i += 1;
                             }
@@ -336,11 +337,57 @@ pub const Device = struct {
     const LAB_DEVICE_TTL = 60;
     const UNKNOWN_DEVICE_TTL = 15;
 
-    const Info = struct {
+    pub const Info = struct {
+        pub const Details = struct {
+            const script = @embedFile("collect.sh");
+
+            build_number: u32,
+            sudo_nopasswd: bool,
+            code_name: []const u8,
+            product_family: []const u8,
+            bios_version: []const u8,
+            jira_objective: []const u8,
+
+            fn init(input: []const u8, allocator: std.mem.Allocator) !Details {
+                var result = std.mem.zeroes(Details);
+                var lines = std.mem.splitScalar(u8, input, '\n');
+
+                while (lines.next()) |line| {
+                    var parts = std.mem.splitScalar(u8, line, '=');
+                    const key = parts.next() orelse continue;
+                    const value = parts.next() orelse continue;
+
+                    if (std.mem.eql(u8, key, "BUILD_NUMBER")) {
+                        result.build_number = std.fmt.parseInt(u32, value, 0) catch 0;
+                    } else if (std.mem.eql(u8, key, "SUDO_NOPASSWD")) {
+                        result.sudo_nopasswd = std.mem.eql(u8, value, "true");
+                    } else if (std.mem.eql(u8, key, "PLATFORM_CODENAME")) {
+                        result.code_name = try allocator.dupe(u8, value);
+                    } else if (std.mem.eql(u8, key, "PRODUCT_FAMILY")) {
+                        result.product_family = try allocator.dupe(u8, value);
+                    } else if (std.mem.eql(u8, key, "BIOS_VERSION")) {
+                        result.bios_version = try allocator.dupe(u8, value);
+                    } else if (std.mem.eql(u8, key, "JIRA_OBJECTIVE")) {
+                        result.jira_objective = try allocator.dupe(u8, value);
+                    }
+                }
+
+                return result;
+            }
+
+            fn deinit(self: Details, allocator: std.mem.Allocator) void {
+                allocator.free(self.code_name);
+                allocator.free(self.product_family);
+                allocator.free(self.bios_version);
+                allocator.free(self.jira_objective);
+            }
+        };
+
         name: []const u8,
         mac: ARP.Mac,
         lab_device: bool,
         last_seen: i64,
+        details: ?Details = null,
     };
 
     ip: ARP.Ip4,
@@ -380,14 +427,23 @@ pub const Device = struct {
         if (dev.info) |info| {
             if (!info.lab_device)
                 dev.allocator.free(info.name);
+            if (info.details) |details|
+                details.deinit(dev.allocator);
         }
-        dev.info = .{
+        var info = Info{
             .name = try dev.allocator.dupe(u8, hostname),
             .mac = mac,
             .lab_device = true,
             .last_seen = now,
         };
+        defer dev.info = info;
         log.info("lab device: {s}", .{hostname});
+
+        stream.reset();
+        switch (try session.spawn(Info.Details.script, stream.writer())) {
+            0 => info.details = try Info.Details.init(stream.getWritten(), dev.allocator),
+            else => {},
+        }
     }
 
     fn runUpdate(dev: *Device, mac: ARP.Mac, user: [:0]const u8, key: ssh.Key) void {
