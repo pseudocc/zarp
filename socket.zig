@@ -8,8 +8,7 @@ const native_endian = builtin.cpu.arch.endian();
 
 const Request = enum(u8) {
     list,
-    block,
-    unblock,
+    rescan,
 };
 
 const Response = struct {
@@ -33,7 +32,7 @@ const Response = struct {
 
     pub fn ok(self: Response, success: bool) !void {
         const byte: u8 = @intFromBool(success);
-        try posix.write(self.client.socket, &.{byte});
+        _ = try posix.write(self.client, &.{byte});
     }
 };
 
@@ -41,6 +40,24 @@ pub const Device = struct {
     ip: ARP.Ip4,
     mac: ARP.Mac,
     name: []const u8,
+
+    pub fn jsonStringify(self: *const Device, writer: anytype) !void {
+        // use a wrapper class to make thing easier
+        const JsObject = struct {
+            ip: []const u8,
+            mac: []const u8,
+            name: []const u8,
+        };
+
+        var ip_buffer: [16]u8 = undefined;
+        var mac_buffer: [18]u8 = undefined;
+
+        try writer.write(JsObject{
+            .ip = try std.fmt.bufPrint(&ip_buffer, "{}", .{ARP.stringify(self.ip)}),
+            .mac = try std.fmt.bufPrint(&mac_buffer, "{}", .{ARP.stringify(self.mac)}),
+            .name = self.name,
+        });
+    }
 };
 
 fn socketPath(buffer: []u8) ![]const u8 {
@@ -131,15 +148,14 @@ pub const Client = struct {
         return devices;
     }
 
-    pub fn block(self: Daemon, name: []const u8, undo: bool) !bool {
+    pub fn rescan(self: Client) !bool {
         const file = std.fs.File{ .handle = self.socket };
         const writer = file.writer();
         const reader = file.reader();
 
-        const request: Request = if (undo) .unblock else .block;
-        try writer.writeByte(@intFromEnum(request));
-        try writer.writeAll(name);
-        try writer.writeByte(0);
+        try writer.writeByte(@intFromEnum(Request.rescan));
+        std.log.debug("sent rescan request", .{});
+
         return try reader.readByte() == @intFromBool(true);
     }
 };
