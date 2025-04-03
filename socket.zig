@@ -63,7 +63,7 @@ pub const Device = struct {
 };
 
 const Socket = struct {
-    const Name = "zarp.sock";
+    const Name = "yolo.socket";
     fd: os.fd_t,
 
     fn init(comptime create: bool) !Socket {
@@ -72,32 +72,34 @@ const Socket = struct {
             .family = os.AF.UNIX,
             .path = undefined,
         };
-        const rt_path = try std.fmt.bufPrintZ(&sa.path, "/run/user/{}", .{os.geteuid()});
+        const rt_path = try std.fmt.bufPrintZ(&sa.path, "/run/zarp", .{});
         _ = try std.fmt.bufPrintZ(sa.path[rt_path.len..], "/{s}", .{Name});
 
+        const dir = cwd.openDir(rt_path, .{}) catch |err| {
+            if (err == error.FileNotFound)
+                log.err("failed to open {s}", .{rt_path});
+            return err;
+        };
+        const socket_path = std.mem.sliceTo(&sa.path, 0);
+
         if (create) {
-            const dir = cwd.openDir(rt_path, .{}) catch |err| switch (err) {
-                error.FileNotFound => mkdir: {
-                    log.info("creating UNIX socket directory {s}", .{rt_path});
-                    try cwd.makeDirZ(rt_path);
-                    break :mkdir try cwd.openDir(rt_path, .{});
-                },
-                else => |e| return e,
-            };
             dir.deleteFile(Name) catch |err| {
-                if (err != error.FileNotFound) return err;
+                if (err != error.FileNotFound)
+                    return err;
             };
         } else {
             // ensure the socket file is present
-            const dir = try cwd.openDir(rt_path, .{});
-            _ = try dir.statFile(Name);
+            _ = dir.statFile(Name) catch |err| {
+                if (err == error.FileNotFound)
+                    log.err("socket file not found: {s}", .{socket_path});
+                return err;
+            };
         }
 
         const addr = std.net.Address{ .un = sa };
         const fd = try posix.socket(os.AF.UNIX, os.SOCK.STREAM, os.PF.UNIX);
         errdefer posix.close(fd);
 
-        const socket_path = std.mem.sliceTo(&sa.path, 0);
         if (create) {
             log.info("binding & listening on UNIX socket {s}", .{socket_path});
             try posix.bind(fd, &addr.any, addr.getOsSockLen());
