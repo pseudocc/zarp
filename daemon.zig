@@ -229,6 +229,9 @@ pub const Daemon = struct {
         const zarpd = try socket.Daemon.init();
         defer zarpd.deinit();
 
+        var threads: std.Thread.Pool = undefined;
+        try threads.init(.{ .allocator = allocator, .n_jobs = 0 });
+
         var last_scan: i64 = 0;
         var force_scan: bool = false;
         while (true) {
@@ -279,12 +282,10 @@ pub const Daemon = struct {
             if (now - last_scan < self.interval)
                 continue;
 
-            var pool: std.Thread.Pool = undefined;
-            try pool.init(.{ .allocator = allocator });
-            defer {
-                pool.deinit();
-                last_scan = now;
-            }
+            defer last_scan = now;
+
+            threads.deinit();
+            try threads.init(.{ .allocator = allocator });
 
             for (devices) |dev| {
                 if (!force_scan and !dev.refresh())
@@ -318,7 +319,7 @@ pub const Daemon = struct {
                 if (i >= devices.len)
                     continue;
 
-                pool.spawn(Device.runUpdate, .{
+                threads.spawn(Device.runUpdate, .{
                     &devices[i],
                     packet.sender.mac,
                     user,
