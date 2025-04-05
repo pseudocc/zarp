@@ -7,10 +7,14 @@ const os = std.os.linux;
 pub const List = struct {
     const Device = socket.Device;
     const Format = enum { json, name };
-    const SortBy = enum { name, ip };
+    const Sort = struct {
+        by: ?enum { name, ip } = null,
+        descent: bool = false,
+    };
 
     format: Format = .name,
-    sort_by: ?SortBy = null,
+    sort: Sort = .{},
+    descent: bool = false,
 
     const arg_json = Z.Final.Declaration{
         .path = &.{"format"},
@@ -25,7 +29,7 @@ pub const List = struct {
     };
 
     const arg_sort_by = Z.Final.Declaration{
-        .path = &.{"sort_by"},
+        .path = &.{ "sort", "by" },
         .parameter = .{ .named = .{
             .long = "sort-by",
             .short = 's',
@@ -33,6 +37,19 @@ pub const List = struct {
         } },
         .description =
         \\Sort device by KIND ascending.
+        ,
+    };
+
+    const arg_descent = Z.Final.Declaration{
+        .path = &.{ "sort", "descent" },
+        .parameter = .{ .named = .{
+            .long = "descent",
+            .short = 'd',
+            .action = .{ .assign = &true },
+        } },
+        .description =
+        \\Do sort in descending order.
+        \\This is only valid if --sort-by is set.
         ,
     };
 
@@ -44,9 +61,11 @@ pub const List = struct {
         .summary = "List all lab devices.",
     };
 
-    fn sortDevice(sort_by: SortBy, lhs: Device, rhs: Device) bool {
+    fn sortDevice(sort: Sort, lhs: Device, rhs: Device) bool {
         const Ip4 = @import("ARP.zig").Ip4;
-        return switch (sort_by) {
+        // write a comment here in case one day I am too dumb to
+        // understand that boolean xor is equivalent to !=
+        return sort.descent != switch (sort.by.?) {
             .name => switch (std.mem.order(u8, lhs.name, rhs.name)) {
                 .lt => true,
                 else => false,
@@ -64,8 +83,8 @@ pub const List = struct {
 
         if (try client.list(allocator)) |devices| {
             defer allocator.free(devices);
-            if (self.sort_by) |sort_by|
-                std.sort.pdq(Device, @constCast(devices), sort_by, sortDevice);
+            if (self.sort.by) |_|
+                std.sort.pdq(Device, @constCast(devices), self.sort, sortDevice);
 
             switch (self.format) {
                 .name => for (devices) |device| {
