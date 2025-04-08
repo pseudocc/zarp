@@ -252,7 +252,7 @@ pub const Daemon = struct {
                     defer allocator.free(labdevs);
 
                     var i: usize = 0;
-                    const online_bound = std.time.timestamp() - Device.LAB_DEVICE_TTL;
+                    const online_bound = std.time.timestamp() - Device.LAB_DEVICE_TTL * 2;
                     for (devices) |dev| {
                         if (dev.info) |info| {
                             if (info.lab_device) {

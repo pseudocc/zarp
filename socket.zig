@@ -23,6 +23,7 @@ const Response = struct {
 
         try writer.writeInt(u32, @intCast(devices.len), native_endian);
         for (devices) |device| {
+            try writer.writeByte(@intFromBool(device.online));
             try writer.writeInt(ARP.Ip4, device.ip, native_endian);
             for (device.mac) |byte| {
                 try writer.writeByte(byte);
@@ -39,10 +40,10 @@ const Response = struct {
 };
 
 pub const Device = struct {
+    online: bool,
     ip: ARP.Ip4,
     mac: ARP.Mac,
     name: []const u8,
-    online: bool,
 
     pub fn jsonStringify(self: *const Device, writer: anytype) !void {
         // use a wrapper class to make thing easier
@@ -182,6 +183,7 @@ pub const Client = struct {
         const n_devices = try reader.readInt(u32, native_endian);
         const devices = try allocator.alloc(Device, n_devices);
         for (devices) |*device| {
+            device.online = try reader.readByte() == @intFromBool(true);
             device.ip = try reader.readInt(ARP.Ip4, native_endian);
             for (&device.mac) |*byte| {
                 byte.* = try reader.readByte();
