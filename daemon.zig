@@ -343,15 +343,13 @@ pub const Device = struct {
 
     ip: ARP.Ip4,
     allocator: std.mem.Allocator,
-    info: ?Info = null,
+    info: ?Info,
 
     fn refresh(dev: Device) bool {
         if (dev.info) |info| {
             const elapsed = std.time.timestamp() - info.last_seen;
-            return if (info.lab_device)
-                elapsed > LAB_DEVICE_TTL
-            else
-                elapsed > UNKNOWN_DEVICE_TTL;
+            const ttl: i64 = if (info.lab_device) LAB_DEVICE_TTL else UNKNOWN_DEVICE_TTL;
+            return elapsed > ttl;
         }
         return true;
     }
