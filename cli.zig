@@ -11,10 +11,16 @@ pub const List = struct {
         by: ?enum { name, ip } = null,
         descent: bool = false,
     };
+    const Status = enum {
+        online,
+        offline,
+        all,
+    };
 
     format: Format = .name,
     sort: Sort = .{},
     descent: bool = false,
+    status: Status = .online,
 
     const arg_json = Z.Final.Declaration{
         .path = &.{"format"},
@@ -53,10 +59,47 @@ pub const List = struct {
         ,
     };
 
+    const arg_online = Z.Final.Declaration{
+        .path = &.{"status"},
+        .parameter = .{ .named = .{
+            .long = "online",
+            .action = .{ .assign = &Status.online },
+        } },
+        .description =
+        \\Only show online devices (default).
+        ,
+    };
+
+    const arg_offline = Z.Final.Declaration{
+        .path = &.{"status"},
+        .parameter = .{ .named = .{
+            .long = "offline",
+            .action = .{ .assign = &Status.offline },
+        } },
+        .description =
+        \\Only show offline devices.
+        ,
+    };
+
+    const arg_all = Z.Final.Declaration{
+        .path = &.{"status"},
+        .parameter = .{ .named = .{
+            .long = "all",
+            .action = .{ .assign = &Status.all },
+        } },
+        .description =
+        \\Show all devices (online and offline).
+        ,
+    };
+
     pub const zargs = Z.Final{
         .args = &.{
             arg_json,
             arg_sort_by,
+            arg_descent,
+            arg_online,
+            arg_offline,
+            arg_all,
         },
         .summary = "List all lab devices.",
     };
@@ -86,11 +129,22 @@ pub const List = struct {
             if (self.sort.by) |_|
                 std.sort.pdq(Device, @constCast(devices), self.sort, sortDevice);
 
+            var filtered_devices = try std.ArrayList(Device).initCapacity(allocator, devices.len);
+            defer filtered_devices.deinit();
+            for (devices) |device| {
+                switch (self.status) {
+                    .online => if (!device.online) continue,
+                    .offline => if (device.online) continue,
+                    .all => {},
+                }
+                filtered_devices.append(device) catch unreachable;
+            }
+
             switch (self.format) {
-                .name => for (devices) |device| {
+                .name => for (filtered_devices.items) |device| {
                     try stdout.print("{s}\n", .{device.name});
                 },
-                .json => try std.json.stringify(devices, .{}, stdout),
+                .json => try std.json.stringify(filtered_devices.items, .{}, stdout),
             }
         }
     }

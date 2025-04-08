@@ -50,7 +50,6 @@ pub const Device = struct {
             ip: []const u8,
             mac: []const u8,
             name: []const u8,
-            online: bool,
         };
 
         var ip_buffer: [16]u8 = undefined;
@@ -60,7 +59,6 @@ pub const Device = struct {
             .ip = try std.fmt.bufPrint(&ip_buffer, "{}", .{ARP.stringify(self.ip)}),
             .mac = try std.fmt.bufPrint(&mac_buffer, "{}", .{ARP.stringify(self.mac)}),
             .name = self.name,
-            .online = self.online,
         });
     }
 };
