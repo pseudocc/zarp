@@ -252,6 +252,7 @@ pub const Daemon = struct {
                     defer allocator.free(labdevs);
 
                     var i: usize = 0;
+                    const online_bound = std.time.timestamp() - Device.LAB_DEVICE_TTL;
                     for (devices) |dev| {
                         if (dev.info) |info| {
                             if (info.lab_device) {
@@ -259,6 +260,7 @@ pub const Daemon = struct {
                                     .ip = dev.ip,
                                     .mac = info.mac,
                                     .name = info.name,
+                                    .online = info.last_seen > online_bound,
                                 };
                                 i += 1;
                             }
