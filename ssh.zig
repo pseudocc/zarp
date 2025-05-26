@@ -49,8 +49,8 @@ pub const Session = struct {
         );
         _ = libssh.ssh_options_set(
             session,
-            libssh.SSH_OPTIONS_TIMEOUT_USEC,
-            &@as(u32, std.time.us_per_s),
+            libssh.SSH_OPTIONS_TIMEOUT,
+            &@as(c_long, 1),
         );
 
         switch (libssh.ssh_connect(session)) {
